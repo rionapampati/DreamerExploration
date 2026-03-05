@@ -65,6 +65,14 @@ class MinAtarConfig():
     reward: Dict = field(default_factory=lambda:{'layers':3, 'node_size':100, 'dist':'normal', 'activation':nn.ELU})
     discount: Dict = field(default_factory=lambda:{'layers':3, 'node_size':100, 'dist':'binary', 'activation':nn.ELU, 'use':True})
 
+    #rnd exploration
+    use_rnd: bool = True
+    rnd: Dict = field(default_factory=lambda: {
+        'hidden_size':  200,   # matches rssm_node_size / embedding_size in this config
+        'output_size':  100,   # half of hidden; keeps it proportional
+        'scale':        0.1,   # start here; tune down to 0.05 for breakout
+        'lr':           2e-4,  # matches model lr
+    })
 
 @dataclass
 class MiniGridConfig():
@@ -126,5 +134,3 @@ class MiniGridConfig():
     obs_decoder: Dict = field(default_factory=lambda:{'layers':3, 'node_size':100, 'dist':'normal', 'activation':nn.ELU, 'kernel':2, 'depth':16})
     reward: Dict = field(default_factory=lambda:{'layers':3, 'node_size':100, 'dist':'normal', 'activation':nn.ELU})
     discount: Dict = field(default_factory=lambda:{'layers':3, 'node_size':100, 'dist':'binary', 'activation':nn.ELU, 'use':True})
-
-    

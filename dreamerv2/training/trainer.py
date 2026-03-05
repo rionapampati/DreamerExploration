@@ -11,6 +11,7 @@ from dreamerv2.models.dense import DenseModel
 from dreamerv2.models.rssm import RSSM
 from dreamerv2.models.pixel import ObsDecoder, ObsEncoder
 from dreamerv2.utils.buffer import TransitionBuffer
+from dreamerv2.models.rnd import RNDModel
 
 class Trainer(object):
     def __init__(
@@ -168,16 +169,34 @@ class Trainer(object):
         prev_rssm_state = self.RSSM._init_rssm_state(self.batch_size)   
         prior, posterior = self.RSSM.rollout_observation(self.seq_len, embed, actions, nonterms, prev_rssm_state)
         post_modelstate = self.RSSM.get_model_state(posterior)               #t to t+seq_len   
-        obs_dist = self.ObsDecoder(post_modelstate[:-1])                     #t to t+seq_len-1  
-        reward_dist = self.RewardDecoder(post_modelstate[:-1])               #t to t+seq_len-1  
-        pcont_dist = self.DiscountModel(post_modelstate[:-1])                #t to t+seq_len-1   
         
+        obs_dist = self.ObsDecoder(post_modelstate[:-1])                     #t to t+seq_len-1  
+        pcont_dist = self.DiscountModel(post_modelstate[:-1])                #t to t+seq_len-1   
         obs_loss = self._obs_loss(obs_dist, obs[:-1])
-        reward_loss = self._reward_loss(reward_dist, rewards[1:])
         pcont_loss = self._pcont_loss(pcont_dist, nonterms[1:])
-        prior_dist, post_dist, div = self._kl_loss(prior, posterior)
 
-        model_loss = self.loss_scale['kl'] * div + reward_loss + obs_loss + self.loss_scale['discount']*pcont_loss
+        # RND: augment rewards with intrinsic curiosity
+        if self.config.use_rnd:
+            with torch.no_grad():
+                intrinsic_r, _, _ = self.RNDModel(post_modelstate[:-1].detach())
+                intrinsic_r = self.RNDModel.normalize(intrinsic_r).unsqueeze(-1)
+
+            # Train the predictor (separate backward pass)
+            _, pred_feat, target_feat = self.RNDModel(post_modelstate[:-1].detach())
+            rnd_loss = ((pred_feat - target_feat.detach()) ** 2).mean()
+            self.rnd_optimizer.zero_grad()
+            rnd_loss.backward()
+            self.rnd_optimizer.step()
+
+            augmented_rewards = rewards[1:] + self.config.rnd['scale'] * intrinsic_r
+        else:
+            augmented_rewards = rewards[1:]
+
+        reward_dist = self.RewardDecoder(post_modelstate[:-1])
+        reward_loss = self._reward_loss(reward_dist, augmented_rewards)  
+
+        prior_dist, post_dist, div = self._kl_loss(prior, posterior)
+        model_loss = self.loss_scale['kl'] * div + reward_loss + obs_loss + self.loss_scale['discount'] * pcont_loss
         return model_loss, div, obs_loss, reward_loss, pcont_loss, prior_dist, post_dist, posterior
 
     def _actor_loss(self, imag_reward, imag_value, discount_arr, imag_log_prob, policy_entropy):
@@ -304,6 +323,13 @@ class Trainer(object):
         else:
             self.ObsEncoder = DenseModel((embedding_size,), int(np.prod(obs_shape)), config.obs_encoder).to(self.device)
             self.ObsDecoder = DenseModel(obs_shape, modelstate_size, config.obs_decoder).to(self.device)
+        if config.use_rnd:
+            rnd_input_size = modelstate_size
+            self.RNDModel = RNDModel(
+                input_size=rnd_input_size,
+                hidden_size=config.rnd['hidden_size'],
+                output_size=config.rnd['output_size'],
+            ).to(self.device)
 
     def _optim_initialize(self, config):
         model_lr = config.lr['model']
@@ -316,6 +342,11 @@ class Trainer(object):
         self.model_optimizer = optim.Adam(get_parameters(self.world_list), model_lr)
         self.actor_optimizer = optim.Adam(get_parameters(self.actor_list), actor_lr)
         self.value_optimizer = optim.Adam(get_parameters(self.value_list), value_lr)
+        if config.use_rnd:
+            self.rnd_optimizer = torch.optim.Adam(
+                self.RNDModel.predictor.parameters(),
+                lr=config.rnd['lr']
+            )
 
     def _print_summary(self):
         print('\n Obs encoder: \n', self.ObsEncoder)
