@@ -6,6 +6,7 @@ import os
 from dreamerv2.utils.module import get_parameters, FreezeParameters
 from dreamerv2.utils.algorithm import compute_return
 
+from dreamerv2.models.simhash import SimHashModel
 from dreamerv2.models.actor import DiscreteActionModel
 from dreamerv2.models.dense import DenseModel
 from dreamerv2.models.rssm import RSSM
@@ -218,7 +219,14 @@ class Trainer(object):
         pcont_dist = self.DiscountModel(post_modelstate[:-1])  # t to t+seq_len-1
 
         obs_loss = self._obs_loss(obs_dist, obs[:-1])
-        reward_loss = self._reward_loss(reward_dist, rewards[1:])
+        if self.config.use_simhash:
+            with torch.no_grad():
+                intrinsic_r = self.SimHashModel(post_modelstate[:-1])
+                intrinsic_r = self.SimHashModel.normalize(intrinsic_r).unsqueeze(-1)
+            augmented_rewards = rewards[1:] + self.config.simhash['scale'] * intrinsic_r
+        else:
+            augmented_rewards = rewards[1:]
+        reward_loss = self._reward_loss(reward_dist, augmented_rewards)
         pcont_loss = self._pcont_loss(pcont_dist, nonterms[1:])
         prior_dist, post_dist, div = self._kl_loss(prior, posterior)
 
@@ -429,6 +437,12 @@ class Trainer(object):
             ).to(self.device)
             self.ObsDecoder = DenseModel(
                 obs_shape, modelstate_size, config.obs_decoder
+            ).to(self.device)
+
+        if config.use_simhash:
+            self.SimHashModel = SimHashModel(
+                input_size=modelstate_size,
+                k=config.simhash['k'],
             ).to(self.device)
 
     def _optim_initialize(self, config):

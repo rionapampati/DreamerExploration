@@ -144,6 +144,20 @@ class MinAtarConfig:
         }
     )
 
+    # SimHash count-based exploration
+    use_simhash: bool = True
+    simhash: Dict = field(default_factory=lambda: {
+        'k':     128,   # hash bits; more = finer state discrimination
+        'scale': 0.1,   # intrinsic reward weight
+    })
+
+    # SimHash count-based exploration
+    use_simhash: bool = True
+    simhash: Dict = field(default_factory=lambda: {
+        'k':     128,   # hash bits; more = finer state discrimination
+        'scale': 0.1,   # intrinsic reward weight
+    })
+
 
 @dataclass
 class MiniGridConfig:
@@ -283,3 +297,10 @@ class MiniGridConfig:
             "use": True,
         }
     )
+
+    # SimHash count-based exploration
+    use_simhash: bool = True
+    simhash: Dict = field(default_factory=lambda: {
+        'k':     128,   # hash bits; more = finer state discrimination
+        'scale': 0.1,   # intrinsic reward weight
+    })
