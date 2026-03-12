@@ -25,7 +25,7 @@ class MinAtarConfig():
 
     # --- TRAINING SPEED (Competitive-Turbo) ---
     train_steps: int = int(5e5)         
-    train_every: int = 80               # Increased frequency (100 -> 80) for better Breakout tracking
+    train_every: int = 50               # Increased frequency (100 -> 50) for better Breakout tracking
     collect_intervals: int = 5
     batch_size: int = 64                # High GPU utilization
     seq_len: int = 50                   
@@ -52,22 +52,23 @@ class MinAtarConfig():
     grad_clip: float = 100.0
     discount_: float = 0.995            # CRITICAL: Values future rewards more (better for rallies)
     lambda_: float = 0.95
-    horizon: int = 15                   # INCREASED: Longer "imagination" for better planning
+    horizon: int = 10                   # decreased
     lr: Dict = field(default_factory=lambda: {
         'model': 2e-4,                  # Stabilized learning rates
         'actor': 4e-5,
         'critic': 8e-5
     })
     loss_scale: Dict = field(default_factory=lambda: {
-        'kl': 0.1,
+        'kl': 0.2, # changed 0.1 -> 0.2 
         'reward': 1.0,
         'discount': 5.0
     })
     kl: Dict = field(default_factory=lambda: {
         'use_kl_balance':    True,
-        'kl_balance_scale':  0.1,       # Shifted to prioritize learning from observations
-        'use_free_nats':     True,      # Prevents KL collapse
-        'free_nats':         1.0
+        'kl_balance_scale':  0.8,       # changed 0.1 -> 0.8
+        'use_free_nats':     True,     
+        'free_nats':         1.0,
+        'beta':              0.1,
     })
     use_slow_target: bool = True
     slow_target_update: int = 100

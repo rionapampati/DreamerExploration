@@ -167,13 +167,23 @@ class Trainer(object):
         embed = self.ObsEncoder(obs)                                         #t to t+seq_len   
         prev_rssm_state = self.RSSM._init_rssm_state(self.batch_size)   
         prior, posterior = self.RSSM.rollout_observation(self.seq_len, embed, actions, nonterms, prev_rssm_state)
+
+        # compute kl divergence between steps to get intrinsic reward
+        prior_dist_steps = self.RSSM.get_dist(prior)
+        post_dist_steps = self.RSSM.get_dist(posterior)
+        kl_per_step = torch.distributions.kl.kl_divergence(post_dist_steps, prior_dist_steps)
+
+        # get [seq_len, batch, 1]
+        intrinsic = self.kl_info['beta'] * kl_per_step.detach().unsqueeze(-1)
+        aug_reward = rewards[1:] + intrinsic[:-1]
+
         post_modelstate = self.RSSM.get_model_state(posterior)               #t to t+seq_len   
         obs_dist = self.ObsDecoder(post_modelstate[:-1])                     #t to t+seq_len-1  
         reward_dist = self.RewardDecoder(post_modelstate[:-1])               #t to t+seq_len-1  
         pcont_dist = self.DiscountModel(post_modelstate[:-1])                #t to t+seq_len-1   
         
         obs_loss = self._obs_loss(obs_dist, obs[:-1])
-        reward_loss = self._reward_loss(reward_dist, rewards[1:])
+        reward_loss = self._reward_loss(reward_dist, aug_reward)
         pcont_loss = self._pcont_loss(pcont_dist, nonterms[1:])
         prior_dist, post_dist, div = self._kl_loss(prior, posterior)
 
