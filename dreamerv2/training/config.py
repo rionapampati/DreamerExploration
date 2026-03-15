@@ -68,7 +68,7 @@ class MinAtarConfig():
         'kl_balance_scale':  0.8,       # changed 0.1 -> 0.8
         'use_free_nats':     True,     
         'free_nats':         1.0,
-        'beta':              0.1,
+        'beta':              0.3,
     })
     use_slow_target: bool = True
     slow_target_update: int = 100

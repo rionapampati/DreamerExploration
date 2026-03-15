@@ -61,6 +61,7 @@ class Trainer(object):
         prior_ent_l = []
         post_ent_l = []
         kl_l = []
+        kl_per_step_l = []
         pcont_l = []
         mean_targ = []
         min_targ = []
@@ -74,7 +75,7 @@ class Trainer(object):
             rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device).unsqueeze(-1)   #t-1 to t+seq_len-1
             nonterms = torch.tensor(1-terms, dtype=torch.float32).to(self.device).unsqueeze(-1)  #t-1 to t+seq_len-1
 
-            model_loss, kl_loss, obs_loss, reward_loss, pcont_loss, prior_dist, post_dist, posterior = self.representation_loss(obs, actions, rewards, nonterms)
+            model_loss, kl_loss, obs_loss, reward_loss, pcont_loss, prior_dist, post_dist, posterior, mean_kl_per_step = self.representation_loss(obs, actions, rewards, nonterms)
             
             self.model_optimizer.zero_grad()
             model_loss.backward()
@@ -107,6 +108,7 @@ class Trainer(object):
             model_l.append(model_loss.item())
             reward_l.append(reward_loss.item())
             kl_l.append(kl_loss.item())
+            kl_per_step_l.append(mean_kl_per_step.item())
             pcont_l.append(pcont_loss.item())
             mean_targ.append(target_info['mean_targ'])
             min_targ.append(target_info['min_targ'])
@@ -115,6 +117,7 @@ class Trainer(object):
 
         train_metrics['model_loss'] = np.mean(model_l)
         train_metrics['kl_loss']=np.mean(kl_l)
+        train_metrics['kl_per_step']=np.mean(kl_per_step_l)
         train_metrics['reward_loss']=np.mean(reward_l)
         train_metrics['obs_loss']=np.mean(obs_l)
         train_metrics['value_loss']=np.mean(value_l)
@@ -188,7 +191,8 @@ class Trainer(object):
         prior_dist, post_dist, div = self._kl_loss(prior, posterior)
 
         model_loss = self.loss_scale['kl'] * div + reward_loss + obs_loss + self.loss_scale['discount']*pcont_loss
-        return model_loss, div, obs_loss, reward_loss, pcont_loss, prior_dist, post_dist, posterior
+        mean_kl_per_step = kl_per_step.detach().mean()
+        return model_loss, div, obs_loss, reward_loss, pcont_loss, prior_dist, post_dist, posterior, mean_kl_per_step
 
     def _actor_loss(self, imag_reward, imag_value, discount_arr, imag_log_prob, policy_entropy):
 
