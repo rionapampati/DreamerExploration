@@ -23,21 +23,12 @@ class MinAtarConfig():
     obs_dtype: np.dtype = np.uint8
     action_dtype: np.dtype = np.float32
 
-<<<<<<< Updated upstream
-    # --- TRAINING SPEED (Competitive-Turbo) ---
-    train_steps: int = int(5e5)         
-    train_every: int = 80               # Increased frequency (100 -> 80) for better Breakout tracking
-    collect_intervals: int = 5
-    batch_size: int = 64                # High GPU utilization
-    seq_len: int = 50                   
-=======
     #training desc
     train_steps: int = int(3e5) # 1e5 -> 5e5
     train_every: int = 50                                  #reduce this to potentially improve sample requirements
     collect_intervals: int = 5 
     batch_size: int = 50 
     seq_len: int = 50
->>>>>>> Stashed changes
     eval_episode: int = 4
     eval_render: bool = False
     save_every: int = int(5e4)
@@ -82,67 +73,6 @@ class MinAtarConfig():
     slow_target_update: int = 100
     slow_target_fraction: float = 1.00
 
-<<<<<<< Updated upstream
-    # --- ACTOR / CRITIC (Deep Brain) ---
-    actor: Dict = field(default_factory=lambda: {
-        'layers':     3,                # +1 Depth: More nuanced policy
-        'node_size':  256,              
-        'dist':       'one_hot',
-        'min_std':    1e-4,
-        'init_std':   5,
-        'mean_scale': 5,
-        'activation': nn.ELU
-    })
-    critic: Dict = field(default_factory=lambda: {
-        'layers':     3,                # +1 Depth: Better value estimation
-        'node_size':  256,              
-        'dist':       'normal',
-        'activation': nn.ELU
-    })
-    expl: Dict = field(default_factory=lambda: {
-        'train_noise': 0.4,
-        'eval_noise':  0.0,
-        'expl_min':    0.05,
-        'expl_decay':  10000.0,         # Slower decay to explore "tunneling" strategies
-        'expl_type':   'epsilon_greedy'
-    })
-    actor_grad: str = 'reinforce'
-    actor_grad_mix: float = 0.0
-    actor_entropy_scale: float = 1e-3
-
-    # --- WORLD MODEL HEADS (High-Res Visuals) ---
-    obs_encoder: Dict = field(default_factory=lambda: {
-        'layers':     2,                # Deeper for spatial awareness
-        'node_size':  256,              
-        'dist':       None,
-        'activation': nn.ELU,
-        'kernel':     3,
-        'depth':      32                # 32 filters to distinguish ball vs brick
-    })
-    obs_decoder: Dict = field(default_factory=lambda: {
-        'layers':     2,
-        'node_size':  256,              
-        'dist':       'normal',
-        'activation': nn.ELU,
-        'kernel':     3,
-        'depth':      32
-    })
-    reward: Dict = field(default_factory=lambda: {
-        'layers':     2,                
-        'node_size':  256,              
-        'dist':       'normal',
-        'activation': nn.ELU
-    })
-    discount: Dict = field(default_factory=lambda: {
-        'layers':     2,                
-        'node_size':  256,              
-        'dist':       'binary',
-        'activation': nn.ELU,
-        'use':        True
-    })
-
-
-=======
     cfn_scale: float = 0.01   # intrinsic reward weight lambda
     cfn_d: int = 20            # number of coin flips
     cfn_lr: float = 1e-4
@@ -160,8 +90,7 @@ class MinAtarConfig():
     obs_decoder: Dict = field(default_factory=lambda:{'layers':3, 'node_size':100, 'dist':'normal', 'activation':nn.ELU, 'kernel':3, 'depth':16})
     reward: Dict = field(default_factory=lambda:{'layers':3, 'node_size':100, 'dist':'normal', 'activation':nn.ELU})
     discount: Dict = field(default_factory=lambda:{'layers':3, 'node_size':100, 'dist':'binary', 'activation':nn.ELU, 'use':True})
->>>>>>> Stashed changes
-
+    
 
 @dataclass
 class MiniGridConfig():

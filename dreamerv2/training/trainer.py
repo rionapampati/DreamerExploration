@@ -11,10 +11,7 @@ from dreamerv2.models.dense import DenseModel
 from dreamerv2.models.rssm import RSSM
 from dreamerv2.models.pixel import ObsDecoder, ObsEncoder
 from dreamerv2.utils.buffer import TransitionBuffer
-<<<<<<< Updated upstream
-=======
 from dreamerv2.models.cfn import CoinFlipNetwork
->>>>>>> Stashed changes
 
 class Trainer(object):
     def __init__(
