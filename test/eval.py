@@ -2,7 +2,7 @@ import argparse
 import os
 import torch
 import numpy as np
-import gymnasium as gym
+import gym
 from dreamerv2.utils.wrapper import GymMinAtar, OneHotAction, breakoutPOMDP, space_invadersPOMDP, seaquestPOMDP, asterixPOMDP, freewayPOMDP
 from dreamerv2.training.config import MinAtarConfig
 from dreamerv2.training.evaluator import Evaluator
