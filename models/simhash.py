@@ -10,11 +10,12 @@ class SimHashModel(nn.Module):
     No trainable parameters — fixed random projection + persistent count table.
     Intrinsic reward = 1 / sqrt(visit_count(hash(state)))
     """
-    def __init__(self, input_size, k=128):
+    def __init__(self, input_size, k=128, max_size=100_000):
         super().__init__()
         A = torch.randn(k, input_size)
         self.register_buffer("A", A)                    # fixed, never updated
-        self.counts = defaultdict(int)                  # persists entire run
+        self.counts = defaultdict(int)                  # bounded by max_size
+        self.max_size = max_size
         self.register_buffer("reward_running_mean", torch.zeros(1))
         self.register_buffer("reward_running_var", torch.ones(1))
 
@@ -36,6 +37,8 @@ class SimHashModel(nn.Module):
         for key in keys:
             self.counts[key] += 1
             rewards.append(1.0 / (self.counts[key] ** 0.5))
+        if len(self.counts) > self.max_size:
+            self.counts.clear()
         intrinsic = torch.tensor(rewards, dtype=latent_state.dtype,
                                  device=latent_state.device)
         return intrinsic.reshape(T, B)
