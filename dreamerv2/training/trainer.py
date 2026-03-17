@@ -11,6 +11,10 @@ from dreamerv2.models.dense import DenseModel
 from dreamerv2.models.rssm import RSSM
 from dreamerv2.models.pixel import ObsDecoder, ObsEncoder
 from dreamerv2.utils.buffer import TransitionBuffer
+<<<<<<< Updated upstream
+=======
+from dreamerv2.models.cfn import CoinFlipNetwork
+>>>>>>> Stashed changes
 
 class Trainer(object):
     def __init__(
@@ -37,6 +41,13 @@ class Trainer(object):
         self._model_initialize(config)
         self._optim_initialize(config)
 
+        stoch_flat = config.rssm_info['stoch_size'] * config.rssm_info['class_size']  # 20*20=400
+        input_size = config.rssm_info['deter_size'] + stoch_flat                       # 200+400=600
+
+        self.cfn = CoinFlipNetwork(input_size=input_size, d=20).to(self.device)
+        self.cfn_optimizer = torch.optim.Adam(self.cfn.net.parameters(), lr=1e-4)
+        self.cfn_buffer = []  # list of (embedding, coin_flip) tuples
+
     def collect_seed_episodes(self, env):
         s, done  = env.reset(), False 
         for i in range(self.seed_steps):
@@ -50,9 +61,6 @@ class Trainer(object):
                 s = ns    
 
     def train_batch(self, train_metrics):
-        """ 
-        trains the world model and imagination actor and critic for collect_interval times using sequence-batch data from buffer
-        """
         actor_l = []
         value_l = []
         obs_l = []
@@ -66,32 +74,57 @@ class Trainer(object):
         min_targ = []
         max_targ = []
         std_targ = []
+        cfn_l = []
+        cfn_bonus_l = []
 
         for i in range(self.collect_intervals):
             obs, actions, rewards, terms = self.buffer.sample()
-            obs = torch.tensor(obs, dtype=torch.float32).to(self.device)                         #t, t+seq_len 
-            actions = torch.tensor(actions, dtype=torch.float32).to(self.device)                 #t-1, t+seq_len-1
-            rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device).unsqueeze(-1)   #t-1 to t+seq_len-1
-            nonterms = torch.tensor(1-terms, dtype=torch.float32).to(self.device).unsqueeze(-1)  #t-1 to t+seq_len-1
+            obs = torch.tensor(obs, dtype=torch.float32).to(self.device)
+            actions = torch.tensor(actions, dtype=torch.float32).to(self.device)
+            rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device).unsqueeze(-1)
+            nonterms = torch.tensor(1-terms, dtype=torch.float32).to(self.device).unsqueeze(-1)
 
             model_loss, kl_loss, obs_loss, reward_loss, pcont_loss, prior_dist, post_dist, posterior = self.representation_loss(obs, actions, rewards, nonterms)
-            
+
             self.model_optimizer.zero_grad()
             model_loss.backward()
             grad_norm_model = torch.nn.utils.clip_grad_norm_(get_parameters(self.world_list), self.grad_clip_norm)
             self.model_optimizer.step()
 
+            # --- CFN: extract latent, compute bonus, augment rewards ---
+            with torch.no_grad():
+                # posterior is a dict with 'deter' [T, B, deter_size] and 'stoch' [T, B, stoch_size] or [T, B, cats, classes]
+                deter = posterior.deter
+                stoch = posterior.stoch                        # [T, B, stoch_size] or [T, B, C, K]
+                stoch_flat = stoch.flatten(start_dim=2)            # [T, B, stoch_size]
+                latent = torch.cat([deter, stoch_flat], dim=-1)    # [T, B, deter+stoch]
+                T, B, L = latent.shape
+                latent_flat = latent.view(T * B, L)                # [T*B, L]
+
+                _, bonus = self.cfn(latent_flat)                   # [T*B]
+                bonus = bonus.view(T, B, 1)                        # [T, B, 1]
+
+            # Augment rewards with intrinsic bonus
+            augmented_rewards = rewards + self.config.cfn_scale * bonus
+
+            # CFN update: sample coin flips, compute loss, backprop
+            coin_flips = (torch.randint(0, 2, (T * B, self.config.cfn_d), device=self.device).float() * 2 - 1)
+            f, _ = self.cfn(latent_flat.detach())
+            cfn_loss = self.cfn.loss(f, coin_flips)
+
+            self.cfn_optimizer.zero_grad()
+            cfn_loss.backward()
+            self.cfn_optimizer.step()
+
+            # Actor-critic uses augmented rewards
             actor_loss, value_loss, target_info = self.actorcritc_loss(posterior)
 
             self.actor_optimizer.zero_grad()
             self.value_optimizer.zero_grad()
-
             actor_loss.backward()
             value_loss.backward()
-
             grad_norm_actor = torch.nn.utils.clip_grad_norm_(get_parameters(self.actor_list), self.grad_clip_norm)
             grad_norm_value = torch.nn.utils.clip_grad_norm_(get_parameters(self.value_list), self.grad_clip_norm)
-
             self.actor_optimizer.step()
             self.value_optimizer.step()
 
@@ -112,20 +145,24 @@ class Trainer(object):
             min_targ.append(target_info['min_targ'])
             max_targ.append(target_info['max_targ'])
             std_targ.append(target_info['std_targ'])
+            cfn_l.append(cfn_loss.item())
+            cfn_bonus_l.append(bonus.mean().item())
 
         train_metrics['model_loss'] = np.mean(model_l)
-        train_metrics['kl_loss']=np.mean(kl_l)
-        train_metrics['reward_loss']=np.mean(reward_l)
-        train_metrics['obs_loss']=np.mean(obs_l)
-        train_metrics['value_loss']=np.mean(value_l)
-        train_metrics['actor_loss']=np.mean(actor_l)
-        train_metrics['prior_entropy']=np.mean(prior_ent_l)
-        train_metrics['posterior_entropy']=np.mean(post_ent_l)
-        train_metrics['pcont_loss']=np.mean(pcont_l)
-        train_metrics['mean_targ']=np.mean(mean_targ)
-        train_metrics['min_targ']=np.mean(min_targ)
-        train_metrics['max_targ']=np.mean(max_targ)
-        train_metrics['std_targ']=np.mean(std_targ)
+        train_metrics['kl_loss'] = np.mean(kl_l)
+        train_metrics['reward_loss'] = np.mean(reward_l)
+        train_metrics['obs_loss'] = np.mean(obs_l)
+        train_metrics['value_loss'] = np.mean(value_l)
+        train_metrics['actor_loss'] = np.mean(actor_l)
+        train_metrics['prior_entropy'] = np.mean(prior_ent_l)
+        train_metrics['posterior_entropy'] = np.mean(post_ent_l)
+        train_metrics['pcont_loss'] = np.mean(pcont_l)
+        train_metrics['mean_targ'] = np.mean(mean_targ)
+        train_metrics['min_targ'] = np.mean(min_targ)
+        train_metrics['max_targ'] = np.mean(max_targ)
+        train_metrics['std_targ'] = np.mean(std_targ)
+        train_metrics['cfn_loss'] = np.mean(cfn_l)
+        train_metrics['cfn_bonus_mean'] = np.mean(cfn_bonus_l)
 
         return train_metrics
 
@@ -137,16 +174,28 @@ class Trainer(object):
             imag_rssm_states, imag_log_prob, policy_entropy = self.RSSM.rollout_imagination(self.horizon, self.ActionModel, batched_posterior)
         
         imag_modelstates = self.RSSM.get_model_state(imag_rssm_states)
+
         with FreezeParameters(self.world_list+self.value_list+[self.TargetValueModel]+[self.DiscountModel]):
             imag_reward_dist = self.RewardDecoder(imag_modelstates)
             imag_reward = imag_reward_dist.mean
             imag_value_dist = self.TargetValueModel(imag_modelstates)
             imag_value = imag_value_dist.mean
             discount_dist = self.DiscountModel(imag_modelstates)
-            discount_arr = self.discount*torch.round(discount_dist.base_dist.probs)              #mean = prob(disc==1)
+            discount_arr = self.discount*torch.round(discount_dist.base_dist.probs)
+
+        with torch.no_grad():
+            deter = imag_rssm_states.deter               # [H, B, deter_size]
+            stoch = imag_rssm_states.stoch               # [H, B, stoch_size*class_size]
+            stoch_flat = stoch.flatten(start_dim=2)      # [H, B, stoch_flat]
+            imag_latent = torch.cat([deter, stoch_flat], dim=-1)  # [H, B, deter+stoch_flat]
+            H, B, L = imag_latent.shape
+            _, imag_bonus = self.cfn(imag_latent.view(H * B, L))  # [H*B]
+            imag_bonus = imag_bonus.view(H, B, 1)                 # [H, B, 1]
+
+        imag_reward = imag_reward + self.config.cfn_scale * imag_bonus
 
         actor_loss, discount, lambda_returns = self._actor_loss(imag_reward, imag_value, discount_arr, imag_log_prob, policy_entropy)
-        value_loss = self._value_loss(imag_modelstates, discount, lambda_returns)     
+        value_loss = self._value_loss(imag_modelstates, discount, lambda_returns)
 
         mean_target = torch.mean(lambda_returns, dim=1)
         max_targ = torch.max(mean_target).item()
@@ -154,10 +203,10 @@ class Trainer(object):
         std_targ = torch.std(mean_target).item()
         mean_targ = torch.mean(mean_target).item()
         target_info = {
-            'min_targ':min_targ,
-            'max_targ':max_targ,
-            'std_targ':std_targ,
-            'mean_targ':mean_targ,
+            'min_targ': min_targ,
+            'max_targ': max_targ,
+            'std_targ': std_targ,
+            'mean_targ': mean_targ,
         }
 
         return actor_loss, value_loss, target_info
