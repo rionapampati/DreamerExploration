@@ -1,5 +1,14 @@
 ## Dreamer- v2 Pytorch
 
+Our Implementations are on branches as follows:
+- [CFN](https://github.com/rionapampati/DreamerExploration)
+- [RND](https://github.com/rionapampati/DreamerExploration/tree/riona)
+- [SimHash](https://github.com/rionapampati/DreamerExploration/tree/simhash)
+- [KL Intrinsic](https://github.com/rionapampati/DreamerExploration/tree/adyah-sparse)
+
+Run the repo with the following information:
+
+
 Pytorch implementation of [Mastering Atari with Discrete World Models](https://arxiv.org/abs/2010.02193)<br>
 
 <p align="middle" >
